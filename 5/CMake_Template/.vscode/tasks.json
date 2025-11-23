@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+        "label": "lanuch-lldb",
+        "type": "shell",
+        "dependsOn": [
+            "build-app"
+        ],
+        "command": [
+            "scp ${workspaceFolder}/build/${workspaceFolderBasename} wjjsn@raspberrypi.local:/tmp",
+            // "&& wjjsn@raspberrypi.local \"chmod +x /tmp/${workspaceFolderBasename} && killall lldb-server;  \" "
+        ]
+    },
+    {
+        "type": "cmake",
+        "label": "build-app",
+        "command": "build",
+        "targets": [
+            "all"
+        ],
+        "group": "build",
+        "problemMatcher": [],
+    }
+],
+
+}

@@ -1,0 +1,6 @@
+*.tar.gz
+*.zip
+*.tgz
+**/build/
+**/.cache/
+**/sysroot/

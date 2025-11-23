@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+        "label": "lanuch-lldb",
+        "type": "shell",
+        "dependsOn": [
+            "open-terminal"
+        ],
+        "command": [
+            "scp ${workspaceFolder}/build/${workspaceFolderBasename} wjjsn@raspberrypi.local:/tmp",
+            // "&& wjjsn@raspberrypi.local \"chmod +x /tmp/${workspaceFolderBasename} && killall lldb-server;  \" "
+            //lldb-server platform --listen "*:1234" --server
+        ]
+    },
+    {
+        "type": "cmake",
+        "label": "build-app",
+        "command": "build",
+        "targets": [
+            "all"
+        ],
+        "group": "build",
+        "problemMatcher": [],
+    },
+    {
+        "label": "open-terminal",
+        "type": "shell",
+        "dependsOn": [
+            "build-app"
+        ],
+        "command": "wt.exe pwsh -Command \"sleep 12&&ffplay -rtsp_transport udp -fflags nobuffer rtsp://raspberrypi.local:8554/stream\" ",
+            "args": [
+            ],
+        "problemMatcher": []
+    }
+],
+
+}
