@@ -1,38 +1,37 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-        "label": "lanuch-lldb",
-        "type": "shell",
-        "dependsOn": [
-            "build-app"
-        ],
-        "command": [
-            "scp ${workspaceFolder}/build/${workspaceFolderBasename} wjjsn@pi5.local:/tmp"
-        ],
-        "problemMatcher": []
-    },
-    {
-        "type": "cmake",
-        "label": "build-app",
-        "command": "build",
-        "targets": [
-            "all"
-        ],
-        "group": "build",
-        "problemMatcher": []
-    },
-    {
-        "label": "run-app",
-        "type": "shell",
-        "dependsOn": [
-            "lanuch-lldb"
-        ],
-        "command": [
-            "ssh wjjsn@pi5.local \"cd /tmp&&/tmp/${workspaceFolderBasename}\" "
-        ],
-        "problemMatcher": []
-    }
-],
-
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "scp-exe",
+            "type": "shell",
+            "dependsOn": [
+                "build-app"
+            ],
+            "command": [
+                "scp ${workspaceFolder}/build/${workspaceFolderBasename} wjjsn@pi5.local:/tmp"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "type": "cmake",
+            "label": "build-app",
+            "command": "build",
+            "targets": [
+                "all"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "run-app",
+            "type": "shell",
+            "dependsOn": [
+                "scp-exe"
+            ],
+            "command": [
+                "ssh wjjsn@pi5.local \"cd /tmp&&/tmp/${workspaceFolderBasename}\" "
+            ],
+            "problemMatcher": []
+        }
+    ],
 }
