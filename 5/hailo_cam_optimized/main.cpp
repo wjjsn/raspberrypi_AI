@@ -208,9 +208,9 @@ int infer(Expected<std::vector<InputVStream> > input_vstreams, Expected<std::vec
         read_output(output_vstreams.value()[0], status);
 
         std::cout << "全过程耗时：" << (std::chrono::high_resolution_clock::now() - all_start) / 1ms << "ms" << std::endl;
-        // cv::imshow("frame", frame);
-        // if (cv::waitKey(1) == 'q')
-        //     break;
+        cv::imshow("frame", frame);
+        if (cv::waitKey(1) == 'q')
+            break;
 
         std::cout << "从读入一帧到显示耗时：" << (std::chrono::high_resolution_clock::now() - all_start) / 1ms << "ms" << std::endl;
         if (HAILO_SUCCESS != status) {
