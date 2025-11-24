@@ -1,7 +1,8 @@
 #include <iostream>
 #include <expected>
+#include <string_view>
 
-std::expected<int, std::string> f(bool b)
+std::expected<int, std::string_view> f(bool b)
 {
 	if (b)
 		return 10;
