@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch",
+      "program": "/tmp/${workspaceFolderBasename}",
+      "initCommands": [
+        "platform select remote-linux", // For example: 'remote-linux', 'remote-macosx', 'remote-android', etc.
+        "platform connect connect://pi5.local:1234",
+        "settings set target.inherit-env false", // See the note below.
+      ],
+      "args": [],
+      "cwd": "/tmp",
+      // "stopOnEntry": true,
+
+      "preLaunchTask": "scp-exe",
+    }
+  ]
+}
