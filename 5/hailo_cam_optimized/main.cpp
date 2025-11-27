@@ -17,15 +17,33 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <chrono>
+#include <opencv2/imgcodecs.hpp>
 #include <queue>
 #include <thread>
 #include <condition_variable>
 #include <mutex>
 #include <future>
 
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <linux/videodev2.h>
+
 #define HEF_FILE ("/home/wjjsn/code/yolov8n.hef")
 constexpr auto video_path = "/home/wjjsn/test.mp4";
+constexpr auto VIDEO_DEVICE = "/dev/video0";
 constexpr size_t MAX_LAYER_EDGES = 16;
+constexpr auto USE_V4L2 = true;
+
+struct buffer {
+    void *start;
+    size_t length;
+    struct v4l2_buffer *v4l2_buf;
+    int fd;
+};
 
 using namespace hailort;
 using namespace std::chrono_literals;
@@ -57,7 +75,9 @@ Expected<std::shared_ptr<ConfiguredNetworkGroup> > configure_network_group(VDevi
 
 std::atomic<bool> g_stop_requested{ false };
 std::mutex g_mutex;
+std::mutex g_v4l2_mutex;
 std::queue<cv::Mat> g_frames;
+std::queue<buffer> g_v4l2_buffer;
 std::condition_variable g_cv;
 
 int infer(Expected<std::vector<InputVStream> > input_vstreams, Expected<std::vector<OutputVStream> > output_vstreams)
@@ -77,8 +97,25 @@ int infer(Expected<std::vector<InputVStream> > input_vstreams, Expected<std::vec
         auto status = HAILO_SUCCESS;
 
         auto get_frame_start = std::chrono::high_resolution_clock::now();
+
         cv::Mat frame;
-        {
+        buffer buf;
+        if (USE_V4L2) {
+            {
+                std::unique_lock<std::mutex> lock(g_mutex);
+                g_cv.wait(lock, [] { return !g_v4l2_buffer.empty() || g_stop_requested; });
+                if (g_stop_requested) {
+                    continue;
+                }
+                buf = g_v4l2_buffer.front();
+                g_v4l2_buffer.pop();
+            }
+            // cv::Mat yuyv(1080, 1920, CV_8UC2, buf.start);
+            // cv::cvtColor(yuyv, frame, cv::COLOR_YUV2RGB_YUYV);
+            cv::Mat rawData(1, buf.length, CV_8UC1, buf.start);
+            frame = cv::imdecode(rawData, cv::IMREAD_COLOR);
+            cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+        } else {
             std::unique_lock<std::mutex> lock(g_mutex);
             g_cv.wait(lock, [] { return !g_frames.empty() || g_stop_requested; });
 
@@ -99,7 +136,7 @@ int infer(Expected<std::vector<InputVStream> > input_vstreams, Expected<std::vec
 
             cv::Mat processed;
             cv::resize(frame, processed, cv::Size(640, 640));
-            cv::cvtColor(processed, processed, cv::COLOR_BGR2RGB);
+            // cv::cvtColor(processed, processed, cv::COLOR_BGR2RGB);
             auto opencv_time = std::chrono::high_resolution_clock::now();
             auto write_time = opencv_time - opencv_start;
             std::cout << "OpenCV预处理耗时：" << write_time / 1ms << "ms" << std::endl;
@@ -208,51 +245,194 @@ int infer(Expected<std::vector<InputVStream> > input_vstreams, Expected<std::vec
         read_output(output_vstreams.value()[0], status);
 
         std::cout << "全过程耗时：" << (std::chrono::high_resolution_clock::now() - all_start) / 1ms << "ms" << std::endl;
-        cv::imshow("frame", frame);
-        if (cv::waitKey(1) == 'q')
-            break;
+        // cv::imshow("frame", frame);
+        // if (cv::waitKey(1) == 'q')
+        //     break;
 
         std::cout << "从读入一帧到显示耗时：" << (std::chrono::high_resolution_clock::now() - all_start) / 1ms << "ms" << std::endl;
         if (HAILO_SUCCESS != status) {
             std::cerr << "Inference failed " << status << std::endl;
             return status;
         }
+
+        if (ioctl(buf.fd, VIDIOC_QBUF, buf.v4l2_buf) < 0) {
+            perror("VIDIOC_QBUF");
+            exit(-1);
+        }
+        delete buf.v4l2_buf;
     }
     return 0;
 }
 
 void capture()
 {
-    // cv::VideoCapture cap(video_path);
+    if constexpr (USE_V4L2) {
+        int fd = open(VIDEO_DEVICE, O_RDWR);
+        if (fd < 0) {
+            perror("open");
+            exit(-1);
+        }
 
-    cv::VideoCapture cap("/dev/video0", cv::CAP_V4L2);
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
-    cap.set(cv::CAP_PROP_FPS, 30);
-    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-    cap.set(cv::CAP_PROP_BUFFERSIZE, 10);
-    if (!cap.isOpened()) {
-        std::cerr << "Failed to open camera " << std::endl;
-        exit(-1);
+        // -------------------------------
+        // 查询设备能力
+        struct v4l2_capability cap;
+        if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
+            perror("VIDIOC_QUERYCAP");
+            exit(-1);
+        }
+        printf("Driver: %s\n", cap.driver);
+
+        // -------------------------------
+        // 设置视频格式
+        struct v4l2_format fmt {};
+
+        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        fmt.fmt.pix.width = 1920;
+        fmt.fmt.pix.height = 1080;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG; // 常用格式
+        fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;
+
+        if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0) {
+            perror("VIDIOC_S_FMT");
+            exit(-1);
+        }
+
+        // -------------------------------
+        // 请求缓冲区（mmap）
+        struct v4l2_requestbuffers req {};
+
+        req.count = 10;
+        req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        req.memory = V4L2_MEMORY_MMAP;
+
+        if (ioctl(fd, VIDIOC_REQBUFS, &req) < 0) {
+            perror("VIDIOC_REQBUFS");
+            exit(-1);
+        }
+
+        struct buffer *buffers = static_cast<struct buffer *>(calloc(req.count, sizeof(*buffers)));
+
+        // mmap 每个 buffer
+        for (size_t i = 0; i < req.count; i++) {
+            struct v4l2_buffer buf {};
+
+            buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+            buf.index = i;
+
+            if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) {
+                perror("VIDIOC_QUERYBUF");
+                exit(-1);
+            }
+
+            buffers[i].length = buf.length;
+            buffers[i].start = mmap(NULL, buf.length,
+                                    PROT_READ | PROT_WRITE,
+                                    MAP_SHARED,
+                                    fd, buf.m.offset);
+
+            if (buffers[i].start == MAP_FAILED) {
+                perror("mmap");
+                exit(-1);
+            }
+
+            // 将 buffer 放入队列
+            if (ioctl(fd, VIDIOC_QBUF, &buf) < 0) {
+                perror("VIDIOC_QBUF");
+                exit(-1);
+            }
+        }
+
+        // -------------------------------
+        // 开始流
+        enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (ioctl(fd, VIDIOC_STREAMON, &type) < 0) {
+            perror("VIDIOC_STREAMON");
+            exit(-1);
+        }
+
+        printf("=== Start capturing ===\n");
+
+        // -------------------------------
+        // 主循环
+        while (!g_stop_requested) {
+            auto buf = new struct v4l2_buffer {};
+
+            buf->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf->memory = V4L2_MEMORY_MMAP;
+
+            // 取出一个 buffer
+            auto cap_start = std::chrono::system_clock::now();
+            if (ioctl(fd, VIDIOC_DQBUF, buf) < 0) {
+                perror("VIDIOC_DQBUF");
+                exit(-1);
+            }
+            auto cap_time = std::chrono::system_clock::now();
+            std::cout << "从V4L2设备取帧耗时" << (cap_time - cap_start) / 1ms << "ms" << "\n";
+            buffers[buf->index].fd = fd;
+            buffers[buf->index].v4l2_buf = buf;
+            {
+                auto start = std::chrono::system_clock::now();
+                std::lock_guard<std::mutex> lock(g_v4l2_mutex);
+                auto lock_time = std::chrono::system_clock::now();
+                std::cout << "获取锁耗时" << (lock_time - start) / 1ms << "ms" << "\n";
+                g_v4l2_buffer.push(buffers[buf->index]);
+            }
+            g_cv.notify_one();
+            // 放回队列
+            // if (ioctl(fd, VIDIOC_QBUF, &buf) < 0) {
+            //     perror("VIDIOC_QBUF");
+            //     exit(-1);
+            // }
+        }
+
+        // -------------------------------
+        // 停止流
+        if (ioctl(fd, VIDIOC_STREAMOFF, &type) < 0) {
+            perror("VIDIOC_STREAMOFF");
+            exit(-1);
+        }
+
+        // 释放缓冲区
+        for (size_t i = 0; i < req.count; i++) {
+            munmap(buffers[i].start, buffers[i].length);
+        }
+        free(buffers);
+        close(fd);
+
+        exit(0);
+    } else {
+        cv::VideoCapture cap(video_path);
+
+        // cv::VideoCapture cap("/dev/video0", cv::CAP_V4L2);
+        // cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
+        // cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
+        // cap.set(cv::CAP_PROP_FPS, 30);
+        // cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+        // cap.set(cv::CAP_PROP_BUFFERSIZE, 10);
+        if (!cap.isOpened()) {
+            std::cerr << "Failed to open camera " << std::endl;
+            exit(-1);
+        }
+        while (!g_stop_requested) {
+            cv::Mat frame;
+            cap >> frame;
+            if (frame.empty()) {
+                std::cout << "End of video file" << std::endl;
+                g_stop_requested = true;
+                break;
+            }
+            while (g_frames.size() > 60) {
+                std::this_thread::sleep_for(1ms);
+            }
+            {
+                std::lock_guard<std::mutex> lock(g_mutex);
+                g_frames.push(std::move(frame)); // 推荐 move
+            }
+            g_cv.notify_one();
+        }
+        cap.release();
     }
-    while (!g_stop_requested) {
-        cv::Mat frame;
-        cap >> frame;
-        if (frame.empty()) {
-            std::cout << "End of video file" << std::endl;
-            g_stop_requested = true;
-            break;
-        }
-        while (g_frames.size() > 60) {
-            std::this_thread::sleep_for(1ms);
-        }
-        {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_frames.push(std::move(frame)); // 推荐 move
-        }
-        g_cv.notify_one();
-    }
-    cap.release();
 }
 
 int main()
@@ -318,6 +498,7 @@ int main()
     std::thread capture_thread(capture);
 
     capture_thread.detach();
+    std::this_thread::sleep_for(1s);
     auto ret_vlaue = fut.get();
     return ret_vlaue;
 }
