@@ -1,3 +1,9 @@
-rsync -avz wjjsn@raspberrypi.local:/usr/include/ /mnt/g/code/raspberrypi/sysroot/usr/include/
-rsync -avz wjjsn@raspberrypi.local:/usr/lib/ /mnt/g/code/raspberrypi/sysroot/usr/lib/
-rsync -avz wjjsn@raspberrypi.local:/usr/share/ /mnt/g/code/raspberrypi/sysroot/usr/share/
+mkdir -p ./sysroot/usr/include/
+mkdir -p ./sysroot/usr/lib/
+mkdir -p ./sysroot/usr/share/
+mkdir -p ./sysroot/lib/
+
+rsync -avz wjjsn@pi5.local:/usr/include/ ./sysroot/usr/include/
+rsync -avz wjjsn@pi5.local:/usr/lib/ ./sysroot/usr/lib/
+rsync -avz wjjsn@pi5.local:/lib/ ./sysroot/lib/
+rsync -avz wjjsn@pi5.local:/usr/share/ ./sysroot/usr/share/
