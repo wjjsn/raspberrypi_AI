@@ -6,11 +6,11 @@
 
 template <typename T>
 class thread_safe_queue {
-    std::queue<T> queue_;
     mutable std::mutex mutex_;
     std::condition_variable condition_variable_;
 
 public:
+    std::queue<T> queue_;
     thread_safe_queue() = default;
     void push(T item)
     {
@@ -50,7 +50,7 @@ public:
         queue_.pop();
         return true;
     }
-    bool front_pop(T &item)
+    void front_pop(T &item)
     {
         std::unique_lock<std::mutex> lock(mutex_);
         condition_variable_.wait(lock, [this] { return !queue_.empty(); });

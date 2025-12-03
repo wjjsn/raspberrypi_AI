@@ -16,6 +16,8 @@ find_package(HailoRT 4.20.0 EXACT REQUIRED)
 add_executable(${CMAKE_PROJECT_NAME} 
     main.cpp
     hailo_init.cpp
+    capture.cpp
+    infer.cpp
     )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE 
@@ -28,4 +30,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     ${OpenCV_LIBS}
 )
 
+# add_compile_options(-Os)
 # set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES SUFFIX ".elf")

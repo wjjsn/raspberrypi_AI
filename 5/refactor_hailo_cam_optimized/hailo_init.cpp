@@ -30,7 +30,7 @@ Expected<std::shared_ptr<ConfiguredNetworkGroup> > configure_network_group(VDevi
     return std::move(network_groups->at(0));
 }
 
-auto hailo_vdevice_init(const std::string_view hef_path, std::size_t max_layer_edges = 16) -> std::tuple<std::vector<InputVStream>, std::vector<OutputVStream> >
+auto hailo_vdevice_init(const std::string_view hef_path, std::size_t max_layer_edges = 16) -> std::tuple<Expected<std::vector<InputVStream> >, Expected<std::vector<OutputVStream> > >
 {
     auto vdevice = VDevice::create();
     if (!vdevice) {

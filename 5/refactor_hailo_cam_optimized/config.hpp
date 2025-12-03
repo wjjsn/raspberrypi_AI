@@ -6,7 +6,7 @@ inline constexpr auto HEF_FILE = "/home/wjjsn/code/yolov8n.hef";
 inline constexpr auto VIDEO_PATH = "/home/wjjsn/test.mp4";
 
 inline constexpr auto VIDEO_DEVICE = "/dev/video0";
-inline constexpr auto USE_V4L2 = true;
+inline constexpr auto USE_V4L2 = false;
 
 inline constexpr auto VIDEO_WIDTH = 1920;
 inline constexpr auto VIDEO_HEIGHT = 1080;
